@@ -1,0 +1,7 @@
+name = "Ellasy"
+uuid = "28e4bf79-3cc1-4874-8158-2349b181455b"
+authors = ["Stephan Scholz"]
+version = "0.1.0"
+
+[compat]
+julia = "1.12"
