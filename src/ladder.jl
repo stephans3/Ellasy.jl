@@ -57,19 +57,19 @@ struct SingleLadder{T}
     end
 end
 
-function SingleLadder(n_circuits::Int, circuitType::Symbol)
+function SingleLadder(n_circuits::Int, circuitType::Symbol; R=1, C=1, L=1)
     N = n_circuits
     if  circuitType in (:R_con_C, :C_con_R) 
-        return SingleLadder(N, circuitType, ones(N), ones(N), zeros(N) )
+        return SingleLadder(N, circuitType, R*ones(N), C*ones(N), zeros(N) )
 
     elseif circuitType in (:L_con_C, :C_con_L) 
-        return SingleLadder(N, circuitType, zeros(N), ones(N), ones(N) )
+        return SingleLadder(N, circuitType, zeros(N), C*ones(N), L*ones(N) )
 
-    elseif circuitType in (:L_con_R || :R_con_L) 
-        return SingleLadder(N, circuitType, ones(N), zeros(N), ones(N) )
+    elseif circuitType in (:L_con_R, :R_con_L) 
+        return SingleLadder(N, circuitType, R*ones(N), zeros(N), L*ones(N) )
 
     elseif circuitType in (:RL_con_C, :RC_con_L, :LC_con_R)
-        return SingleLadder(N, circuitType, ones(N), ones(N), ones(N) )   
+        return SingleLadder(N, circuitType, R*ones(N), C*ones(N), L*ones(N) )   
     end
 
 end
@@ -166,3 +166,107 @@ function buildSecondOrderSystem(ladder)
 
     return (M, D, S, G₁, G₂, G₃)
 end
+
+
+#=
+    A = [0 , I;
+         A₁, A₂]
+    B
+=#
+function buildFOSubmatrices(ladder)
+    ctype = ladder.circuitType
+    N = ladder.n_circuits
+    R = ladder.R
+    C = ladder.C
+    L = ladder.L
+
+    A₁, A₂, B = [], [], [];
+
+    if ctype == :L_con_C        # Series: Inductor ; Shunt: Capacitor
+        Cinv = inv.(C);
+        A₁ = buildDiffusion(L, Cinv)
+        A₂ = zeros(N,N)
+        B = Cinv[1]/L[1] * vcat(1,zeros(N-1))
+    
+    elseif ctype == :C_con_L    # Series: Capacitor ; Shunt: Inductor
+        Cinv = inv.(C);
+        A₁ = buildDoubleIntegration(Cinv, L)
+        A₂ = zeros(N,N)
+        B = ones(N)
+
+    elseif  ctype == :RL_con_C   # Series: Resistor & Inductor ; Shunt: Capacitor
+        Cinv = inv.(C);
+        A₁ = buildDiffusion(L, Cinv)
+        A₂ = buildReaction(L,R,Cinv)
+        B = Cinv[1]/L[1] * vcat(1,zeros(N-1))
+        
+    elseif ctype == :LC_con_R   # Series: Inductor &  Capacitor; Shunt: Resistor
+        Cinv = inv.(C);
+        A₁ = buildReaction(L,Cinv,R)
+        A₂ = buildDiffusion(L, R)
+        B = R[1]/L[1] * vcat(1,zeros(N-1))             
+                
+    elseif ctype == :RC_con_L   # Series: Resistor & Capacitor ; Shunt: Inductor
+        Cinv = inv.(C);
+        A₁ = buildDoubleIntegration(Cinv, L)
+        A₂ = buildDoubleIntegration(R, L)
+        B = ones(N)
+    end
+
+    return (A₁, A₂, B)
+end
+
+#=
+    x' = A x + B u
+    y = C x + D u
+
+    ---------------
+    TODO: update this
+    ---------------
+    If aug = true
+    u' = ..
+    u'' = v
+
+=#
+function buildFirstOrderSystem(ladder; aug=false)
+    ctype = ladder.circuitType
+    N = ladder.n_circuits
+    R = ladder.R
+    C = ladder.C
+    L = ladder.L
+
+    A, B, Cout = [], [], [];
+
+    if ctype in (:L_con_C, :C_con_L, :RL_con_C, :LC_con_R, :RC_con_L)
+        A₁, A₂, B̃ = buildFOSubmatrices(ladder)
+        A = vcat(hcat(zeros(N,N), LinearAlgebra.I),hcat(A₁,A₂))
+        B = vcat(zeros(N),B̃)
+        Cout = hcat(zeros(1,N-1),1,zeros(1,N))
+
+    elseif ctype == :R_con_C
+        Cinv = inv.(C);
+        A = buildDiffusion(R, Cinv)
+        B = Cinv[1]/R[1] * vcat(1,zeros(N-1))
+        Cout = hcat(zeros(1,N-1),1)
+
+    elseif ctype == :C_con_R    # Series: Capacitor ; Shunt: Resistor 
+        Cinv = inv.(C);
+        A = buildDoubleIntegration(Cinv, R)
+        B = ones(N)
+        Cout = hcat(zeros(1,N-1),1)
+
+    elseif ctype == :L_con_R    # Series: Inductor  ; Shunt: Resistor
+        A = buildDiffusion(L, R)
+        B = R[1]/L[1] * vcat(1,zeros(N-1)) 
+        Cout = hcat(zeros(1,N-1),1)
+
+    elseif ctype == :R_con_L    # Series: Resistor  ; Shunt: Inductor
+        A = buildDoubleIntegration(R, L)
+        B = ones(N)
+        Cout = hcat(zeros(1,N-1),1)
+
+    end
+
+    return (A, B, Cout)
+end
+

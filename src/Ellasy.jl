@@ -9,5 +9,6 @@ include("./ladder.jl")
 
 export SingleLadder
 export getCircuitTypes, buildSecondOrderSystem
+export buildFOSubmatrices, buildFirstOrderSystem
 
 end
