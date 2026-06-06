@@ -1,3 +1,7 @@
 /Manifest*.toml
 /docs/Manifest*.toml
 /docs/build/
+/examples/*
+
+/src/code_old.jl
+/src/playground.jl

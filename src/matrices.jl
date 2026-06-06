@@ -34,6 +34,56 @@ function buildUpperTriangular(dim :: T where T <: Integer)
     return M
 end
 
+
+#=
+    Builds a matrix of shape
+
+    [v[1]*w[1] v[1]*w[2] v[1]*w[3] ... v[1]*w[n]]
+    [    0     v[2]*w[2] v[2]*w[3] ... v[2]*w[n]]
+    [    0         0     v[3]*w[3] ... v[3]*w[n]]
+=#
+#=
+function upperTriangular(v, w)
+    n = length(v)
+    T = typeof(v[end])
+    M = zeros(T, n,n);
+    for i = 1 : n, j = i : n
+        if j >= i 
+            M[i,j] = v[i]*w[j]
+        end
+    end
+    return M
+end
+=#
+
+
+"""
+    Builds a matrix of shape
+
+    [v[1]*w[1] v[1]*w[2] v[1]*w[3] ... v[1]*w[n]]
+    [    0     v[2]*w[2] v[2]*w[3] ... v[2]*w[n]]
+    [    0         0     v[3]*w[3] ... v[3]*w[n]]
+"""
+function upperTriangular(v, w; is_inverted = false)
+    n = length(v)
+    T = typeof(v[end])
+    if( is_inverted == false)
+        M = mapreduce(i-> vcat(v[1:i]*w[i],zeros(T, N-i)),hcat,1:n)
+    else
+        M = mapreduce(i-> vcat(T(1) ./ (v[1:i]*w[i]),zeros(T, N-i)),hcat,1:n)
+    end
+    return M
+end
+
+function _build_InvDiffusion(T,n)
+    M = zeros(T,n,n)
+    for i=1:n
+        M[i:n,i] .= i
+        M[i,i:n] .= i
+    end
+    return M;
+end
+
 """
     Builds matrix of shape
 
@@ -117,6 +167,7 @@ function buildReaction(nocon_a :: Vector{T1}, nocon_b :: Vector{T2}, con :: Vect
         M[i,i] = -nocon_b[i] / nocon_a[i]
         for j = i+1 : N
             M[i,j] = -(nocon_b[i]*con[i] / (nocon_a[i]*con[j]) - nocon_b[i+1]*con[i]/(nocon_a[i+1]*con[j]))
+            # M[i,j] = -((nocon_b[i] / nocon_a[i]) - (nocon_b[i+1]/nocon_a[i+1]))*(con[i]/con[j])
         end
     end
  
