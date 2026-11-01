@@ -2,6 +2,8 @@ abstract type LadderObject end
 abstract type SingleLadderObject <: LadderObject end
 # abstract type MultiLadderObject <: LadderObject end
 
+# Maybe rename SingleLadderSimple -> SingleLadderUniform 
+# 2026/08/10: Renaming proposal: SingleUniformLadder
 struct SingleLadderSimple{T}
     n_circuits :: Int
     circuitType :: Symbol
@@ -10,6 +12,7 @@ struct SingleLadderSimple{T}
     L :: T
 end
 
+# 2026/08/10: Renaming proposal: SingleNonUniformLadder | SingleVariableLadder
 struct SingleLadderVariable{T}
     n_circuits :: Int
     circuitType :: Symbol
@@ -326,6 +329,18 @@ function secondOrder(ladder :: SingleLadderVariable)
 end
 
 
+#=
+
+A = 
+[ 0 | I ]
+[ A₁ | A₂ ]
+
+B = 
+[ 0 
+  B̃ ]
+
+=#
+
 function firstOrderSubmatrices(ladder :: SingleLadderSimple)
     ctype = ladder.circuitType
     N = ladder.n_circuits
@@ -390,6 +405,55 @@ function firstOrderSubmatrices(ladder :: SingleLadderSimple)
 
     return (A₁, A₂, B)
 end
+
+#=
+    A = [0 , I;
+         A₁, A₂]
+    B
+=#
+function firstOrderSubmatrices(ladder :: SingleLadderVariable)
+    ctype = ladder.circuitType
+    N = ladder.n_circuits
+    R = ladder.R
+    C = ladder.C
+    L = ladder.L
+
+    A₁, A₂, B = [], [], [];
+
+    if ctype == :L_con_C        # Series: Inductor ; Shunt: Capacitor
+        Cinv = inv.(C);
+        A₁ = buildDiffusion(L, Cinv)
+        A₂ = zeros(N,N)
+        B = Cinv[1]/L[1] * vcat(1,zeros(N-1))
+    
+    elseif ctype == :C_con_L    # Series: Capacitor ; Shunt: Inductor
+        Cinv = inv.(C);
+        A₁ = buildDoubleIntegration(Cinv, L)
+        A₂ = zeros(N,N)
+        B = ones(N)
+
+    elseif  ctype == :RL_con_C   # Series: Resistor & Inductor ; Shunt: Capacitor
+        Cinv = inv.(C);
+        A₁ = buildDiffusion(L, Cinv)
+        A₂ = buildReaction(L,R,Cinv)
+        B = Cinv[1]/L[1] * vcat(1,zeros(N-1))
+        
+    elseif ctype == :LC_con_R   # Series: Inductor &  Capacitor; Shunt: Resistor
+        Cinv = inv.(C);
+        A₁ = buildReaction(L,Cinv,R)
+        A₂ = buildDiffusion(L, R)
+        B = R[1]/L[1] * vcat(1,zeros(N-1))             
+                
+    elseif ctype == :RC_con_L   # Series: Resistor & Capacitor ; Shunt: Inductor
+        Cinv = inv.(C);
+        A₁ = buildDoubleIntegration(Cinv, L)
+        A₂ = buildDoubleIntegration(R, L)
+        B = ones(N)
+    end
+
+    return (A₁, A₂, B)
+end
+
 
 #=
     A = [0 , I;
@@ -510,6 +574,60 @@ function firstOrder(ladder :: SingleLadderSimple)
     return FirstOrderSystem(A, B, Cout, in_deriv_order)
 end
 
+
+function firstOrder(ladder :: SingleLadderVariable )
+    ctype = ladder.circuitType
+    N = ladder.n_circuits
+    R = ladder.R
+    C = ladder.C
+    L = ladder.L
+
+    A, B, Cout = [], [], [];
+    T = typeof(R[end])
+
+    in_deriv_order = _getDerivOrderInput(ladder);  # Order of differentiation of input signal   
+
+    # RHS input weighing vector
+    V_g = vcat(T(1), zeros(T, N-1,1))
+
+    if ctype in (:L_con_C, :C_con_L, :RL_con_C, :LC_con_R, :RC_con_L)
+        A₁, A₂, B̃ = firstOrderSubmatrices(ladder)
+        A = vcat( hcat(zeros(T, N, N), LinearAlgebra.I), hcat(A₁, A₂) )
+        B = vcat(zeros(T, N, 1), B̃)
+        Cout = hcat(zeros(T, 1, N-1),1,zeros(T, 1, N))
+
+    elseif ctype == :R_con_C
+        # Series: Resistor | Shunt: Capacitor 
+        Cinv = 1 ./ C;
+        A = buildDiffusion(R, Cinv)
+        B = V_g  / (R[1]*C[1])
+        Cout = hcat(zeros(T, 1, N-1), T(1))
+    
+    elseif ctype == :C_con_R    
+        # Series: Capacitor | Shunt: Resistor 
+        Cinv = 1 ./ C;
+        A = buildDoubleIntegration(Cinv, R)
+        B = ones(T, N, 1)
+        Cout = hcat(zeros(T, 1, N-1), T(1))
+
+    elseif ctype == :L_con_R    
+        # Series: Inductor | Shunt: Resistor
+        A = buildDiffusion(L, R)
+        B = (R[1]/L[1]) * V_g  
+        Cout = hcat(zeros(T, 1, N-1), T(1))
+
+    elseif ctype == :R_con_L    
+        # Series: Resistor | Shunt: Inductor
+        A = buildDoubleIntegration(R, L)
+        B = ones(T, N, 1)
+        Cout = hcat(zeros(T, 1, N-1), T(1))
+    end
+
+    return FirstOrderSystem(A, B, Cout, in_deriv_order)
+end
+
+
+
 function buildFirstOrderSystem(ladder; aug=false)
     ctype = ladder.circuitType
     N = ladder.n_circuits
@@ -551,4 +669,3 @@ function buildFirstOrderSystem(ladder; aug=false)
 
     return (A, B, Cout)
 end
-

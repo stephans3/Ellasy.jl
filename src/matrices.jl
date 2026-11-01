@@ -68,9 +68,9 @@ function upperTriangular(v, w; is_inverted = false)
     n = length(v)
     T = typeof(v[end])
     if( is_inverted == false)
-        M = mapreduce(i-> vcat(v[1:i]*w[i],zeros(T, N-i)),hcat,1:n)
+        M = mapreduce(i-> vcat(v[1:i]*w[i],zeros(T, n-i)),hcat,1:n)
     else
-        M = mapreduce(i-> vcat(T(1) ./ (v[1:i]*w[i]),zeros(T, N-i)),hcat,1:n)
+        M = mapreduce(i-> vcat(T(1) ./ (v[1:i]*w[i]),zeros(T, n-i)),hcat,1:n)
     end
     return M
 end
@@ -83,6 +83,7 @@ function _build_InvDiffusion(T,n)
     end
     return M;
 end
+
 
 """
     Builds matrix of shape
@@ -109,21 +110,23 @@ end
 
 
 # Calculates -∫ dx
-function buildDoubleIntegration(num :: Vector{T1}, den :: Vector{T2} ) where {T1 <: Real, T2 <: Real}
+function buildDoubleIntegration(T :: DataType, num :: Vector{T₁}, den :: Vector{T₂} ) where {T₁, T₂}
     N = length(num) 
 
     if N != length(den)
         error("Both vectors must have the same length! Length Num=", N, " Length Den=", length(den))
     end
 
-    M = zeros(N, N);
+    M = zeros(T, N, N);
     for i = 1 : N, j = 1 : N
         M[i,j] = -sum(num[1:min(i,j)]) / den[j]    
     end
     return M
 end
 
-
+function buildDoubleIntegration(num :: Vector{T₁}, den :: Vector{T₂} ) where {T₁, T₂}
+    return buildDoubleIntegration(T₁, num, den )
+end
 
 """
     nocon: not connector elements
@@ -174,4 +177,39 @@ function buildReaction(nocon_a :: Vector{T1}, nocon_b :: Vector{T2}, con :: Vect
     M[N,N] = -nocon_b[N] / nocon_a[N]
 
     return M
+end
+
+
+function pseudoTriElement(a₁, a₂, b₁, b₂, c₁, c₂)
+    return ((b₁ / a₁) -  (b₂ / a₂))*(c₂ / c₁);
+end
+
+"""
+Pseudo triangular matrix
+[\\****]
+[ \\***]
+[  \\**]
+[   \\*]
+[    \\]
+"""
+function buildPseudoTriangular(T :: DataType, nocon_a :: Vector{T₁}, nocon_b :: Vector{T₂}, con :: Vector{T₃} ) where {T₁, T₂, T₃}
+    N = length(nocon_a) 
+    M = zeros(T, N, N);
+
+    if N != length(con) || N != length(nocon_b) 
+        error("Both vectors must have the same length! Length nocon_a=", N, " Length con=", length(nocon_b), " Length con=", length(con))
+    end
+
+    for (idx, a) in enumerate(nocon_a)
+        M[idx,idx] = nocon_b[idx] / a;
+        if idx < N
+            M[idx,idx+1:N] = map(j-> pseudoTriElement(a, nocon_a[idx+1], nocon_b[idx], nocon_b[idx+1], con[idx], con[j]), idx+1:N)
+        end
+    end
+
+  return M;
+end
+
+function buildPseudoTriangular(nocon_a :: Vector{T₁}, nocon_b :: Vector{T₂}, con :: Vector{T₃} ) where {T₁, T₂, T₃}
+    return buildPseudoTriangular(T₁, nocon_a , nocon_b, con )
 end
